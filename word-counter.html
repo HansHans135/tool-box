@@ -1,0 +1,152 @@
+﻿<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>字數統計 - 實用小工具集</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+        body { font-family: "Inter", sans-serif; }
+    </style>
+</head>
+<body class="bg-white text-gray-900 min-h-screen antialiased flex flex-col">
+    <nav class="border-b border-gray-100 flex-none">
+        <div class="max-w-7xl mx-auto px-6 lg:px-8">
+            <div class="flex justify-between h-20 items-center">
+                <div class="flex items-center gap-2">
+                    <a href="index.html" class="w-8 h-8 bg-black rounded-lg flex items-center justify-center hover:opacity-80 transition-opacity">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+                    </a>
+                    <span class="text-xl font-bold tracking-tight">字數統計</span>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="clearText()" class="text-sm font-medium text-gray-400 hover:text-red-500 transition-colors px-3 py-2">清空</button>
+                    <button onclick="copyText(this)" class="text-sm font-medium bg-black text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors">複製文字</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-6 lg:px-8 py-10 w-full flex-grow flex flex-col lg:flex-row gap-10">
+        <!-- Main Input -->
+        <div class="flex-grow flex flex-col h-[70vh] lg:h-auto">
+            <textarea id="textInput"
+                class="w-full h-full p-6 text-lg leading-relaxed bg-gray-50 rounded-2xl border-2 border-transparent focus:border-black focus:bg-white outline-none resize-none transition-all placeholder-gray-400"
+                placeholder="在此輸入或貼上您的文字..."
+                autofocus
+                oninput="updateStats()"></textarea>
+        </div>
+
+        <!-- Sidebar Stats -->
+        <div class="w-full lg:w-80 flex-none space-y-8">
+            <div>
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">統計資料</h3>
+                <div class="grid grid-cols-2 lg:grid-cols-1 gap-4">
+                    <div class="p-4 rounded-xl bg-gray-50">
+                        <div class="text-3xl font-bold font-mono" id="charWithSpace">0</div>
+                        <div class="text-xs text-gray-500 font-medium">總字元數</div>
+                    </div>
+                    <div class="p-4 rounded-xl bg-gray-50">
+                        <div class="text-3xl font-bold font-mono" id="wordCount">0</div>
+                        <div class="text-xs text-gray-500 font-medium">英文字數</div>
+                    </div>
+                    <div class="p-4 rounded-xl bg-gray-50">
+                        <div class="text-3xl font-bold font-mono" id="chineseCount">0</div>
+                        <div class="text-xs text-gray-500 font-medium">中文字數</div>
+                    </div>
+                    <div class="p-4 rounded-xl bg-white border border-gray-100">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="text-gray-500 text-sm">不含空格</span>
+                            <span class="font-bold font-mono" id="charWithoutSpace">0</span>
+                        </div>
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="text-gray-500 text-sm">行數</span>
+                            <span class="font-bold font-mono" id="lineCount">0</span>
+                        </div>
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="text-gray-500 text-sm">段落數</span>
+                            <span class="font-bold font-mono" id="paragraphCount">0</span>
+                        </div>
+                         <div class="flex justify-between items-center">
+                            <span class="text-gray-500 text-sm">閱讀時間</span>
+                            <span class="font-bold font-mono" id="readingTime">0m</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">工具</h3>
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="transformText(this)" data-type="uppercase" class="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium hover:border-black hover:bg-black hover:text-white transition-all">全部大寫</button>
+                    <button onclick="transformText(this)" data-type="lowercase" class="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium hover:border-black hover:bg-black hover:text-white transition-all">全部小寫</button>
+                    <button onclick="transformText(this)" data-type="capitalize" class="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium hover:border-black hover:bg-black hover:text-white transition-all">首字大寫</button>
+                    <button onclick="transformText(this)" data-type="removeSpaces" class="px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium hover:border-black hover:bg-black hover:text-white transition-all">移除空格</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        function updateStats() {
+            const text = document.getElementById("textInput").value;
+
+            document.getElementById("charWithSpace").textContent = text.length.toLocaleString();
+            // Use quotes instead of slash if regex allows or escape backspace
+            document.getElementById("charWithoutSpace").textContent = text.replace(/\s/g, "").length.toLocaleString();
+            
+            const chineseCount = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
+            document.getElementById("chineseCount").textContent = chineseCount.toLocaleString();
+
+            // Escape backslash for PS string
+            const words = text.trim().split(/\s+/).filter(word => /[a-zA-Z]/.test(word));
+            const wordCount = text.trim() === "" ? 0 : words.length;
+            document.getElementById("wordCount").textContent = wordCount.toLocaleString();
+
+            const lines = text.split("\n");
+            document.getElementById("lineCount").textContent = (text === "" ? 0 : lines.length).toLocaleString();
+
+            const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim() !== "");
+            document.getElementById("paragraphCount").textContent = paragraphs.length.toLocaleString();
+
+            const readingTimeMinutes = Math.ceil((chineseCount / 300) + (wordCount / 200));
+            document.getElementById("readingTime").textContent = readingTimeMinutes + "m";
+        }
+
+        function clearText() {
+            document.getElementById("textInput").value = "";
+            updateStats();
+        }
+
+        function copyText(btn) {
+            const textInput = document.getElementById("textInput");
+            if (textInput.value === "") return;
+            textInput.select();
+            document.execCommand("copy");
+            
+            const original = btn.textContent;
+            btn.textContent = "已複製！";
+            setTimeout(() => btn.textContent = original, 1000);
+        }
+
+        function transformText(btn) {
+            const type = btn.dataset.type;
+            const textInput = document.getElementById("textInput");
+            let text = textInput.value;
+            if (text === "") return;
+
+            switch(type) {
+                case "uppercase": text = text.toUpperCase(); break;
+                case "lowercase": text = text.toLowerCase(); break;
+                case "capitalize": 
+                    text = text.toLowerCase().replace(/(^|\s)\S/g, l => l.toUpperCase());
+                    break;
+                case "removeSpaces": text = text.replace(/\s+/g, " "); break;
+            }
+            textInput.value = text;
+            updateStats();
+        }
+    </script>
+</body>
+</html>

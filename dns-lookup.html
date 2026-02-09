@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DNS 查詢 - 實用小工具集</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+        body { font-family: "Inter", sans-serif; }
+    </style>
+</head>
+<body class="bg-white text-gray-900 min-h-screen antialiased flex flex-col">
+    <nav class="border-b border-gray-100 flex-none">
+        <div class="max-w-7xl mx-auto px-6 lg:px-8">
+            <div class="flex justify-between h-20 items-center">
+                <div class="flex items-center gap-2">
+                    <a href="index.html" class="w-8 h-8 bg-black rounded-lg flex items-center justify-center hover:opacity-80 transition-opacity">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+                    </a>
+                    <span class="text-xl font-bold tracking-tight">DNS 查詢</span>
+                </div>
+                <button onclick="copyResult()" class="text-sm font-semibold border border-gray-200 px-4 py-2 rounded-lg hover:border-black hover:bg-black hover:text-white transition-all">
+                    複製結果
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-6 lg:px-8 py-10 w-full flex-grow flex flex-col gap-8">
+
+        <!-- Search Box -->
+        <div class="space-y-4">
+            <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest">DNS 記錄查詢</label>
+            <div class="flex flex-col md:flex-row gap-2">
+                <input type="text" id="domain-input" class="flex-grow p-4 bg-gray-50 border-2 border-transparent focus:bg-white focus:border-black outline-none rounded-xl transition-all" placeholder="輸入域名，例如: example.com" onkeypress="if(event.key==='Enter') performLookup()">
+                <select id="record-type" class="p-4 bg-gray-50 border-2 border-transparent focus:bg-white focus:border-black outline-none rounded-xl transition-all">
+                    <option value="A">A (IPv4)</option>
+                    <option value="AAAA">AAAA (IPv6)</option>
+                    <option value="CNAME">CNAME</option>
+                    <option value="MX">MX (郵件)</option>
+                    <option value="TXT">TXT</option>
+                    <option value="NS">NS (名稱伺服器)</option>
+                    <option value="SOA">SOA</option>
+                    <option value="ALL" selected>全部</option>
+                </select>
+                <button onclick="performLookup()" class="px-8 py-4 bg-black text-white rounded-xl font-semibold hover:opacity-90 transition-all whitespace-nowrap">
+                    查詢
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loading" class="hidden text-center py-12">
+            <div class="inline-block w-8 h-8 border-4 border-gray-200 border-t-black rounded-full animate-spin"></div>
+            <p class="mt-4 text-gray-500">查詢中...</p>
+        </div>
+
+        <!-- Results -->
+        <div id="results" class="hidden space-y-6">
+            <!-- A Records -->
+            <div id="a-records" class="border border-gray-200 rounded-xl p-6">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">A 記錄 (IPv4)</h3>
+                <div id="a-content" class="space-y-2 font-mono text-sm">
+                    -
+                </div>
+            </div>
+
+            <!-- AAAA Records -->
+            <div id="aaaa-records" class="border border-gray-200 rounded-xl p-6">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">AAAA 記錄 (IPv6)</h3>
+                <div id="aaaa-content" class="space-y-2 font-mono text-sm">
+                    -
+                </div>
+            </div>
+
+            <!-- CNAME Records -->
+            <div id="cname-records" class="border border-gray-200 rounded-xl p-6">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">CNAME 記錄</h3>
+                <div id="cname-content" class="space-y-2 font-mono text-sm">
+                    -
+                </div>
+            </div>
+
+            <!-- MX Records -->
+            <div id="mx-records" class="border border-gray-200 rounded-xl p-6">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">MX 記錄 (郵件伺服器)</h3>
+                <div id="mx-content" class="space-y-2 font-mono text-sm">
+                    -
+                </div>
+            </div>
+
+            <!-- TXT Records -->
+            <div id="txt-records" class="border border-gray-200 rounded-xl p-6">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">TXT 記錄</h3>
+                <div id="txt-content" class="space-y-2 font-mono text-sm break-all">
+                    -
+                </div>
+            </div>
+
+            <!-- NS Records -->
+            <div id="ns-records" class="border border-gray-200 rounded-xl p-6">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">NS 記錄 (名稱伺服器)</h3>
+                <div id="ns-content" class="space-y-2 font-mono text-sm">
+                    -
+                </div>
+            </div>
+
+            <!-- Raw JSON -->
+            <div class="border border-gray-200 rounded-xl p-6">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">完整資料 (JSON)</h3>
+                <pre id="result-raw" class="bg-gray-50 p-4 rounded-lg overflow-x-auto text-xs font-mono whitespace-pre-wrap">查詢結果將顯示在這裡</pre>
+            </div>
+        </div>
+
+        <!-- Error Message -->
+        <div id="error" class="hidden border border-red-200 bg-red-50 rounded-xl p-6">
+            <h3 class="font-bold text-red-900 mb-2">查詢失敗</h3>
+            <p class="text-red-700" id="error-message"></p>
+        </div>
+
+        <!-- Examples -->
+        <div class="pt-8 border-t border-gray-100">
+            <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">範例域名</label>
+            <div class="flex flex-wrap gap-2">
+                <button onclick="loadExample('google.com')" class="px-4 py-2 border border-gray-200 rounded-lg hover:border-black transition-all text-sm">google.com</button>
+                <button onclick="loadExample('github.com')" class="px-4 py-2 border border-gray-200 rounded-lg hover:border-black transition-all text-sm">github.com</button>
+                <button onclick="loadExample('cloudflare.com')" class="px-4 py-2 border border-gray-200 rounded-lg hover:border-black transition-all text-sm">cloudflare.com</button>
+                <button onclick="loadExample('dns.google')" class="px-4 py-2 border border-gray-200 rounded-lg hover:border-black transition-all text-sm">dns.google</button>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        let allResults = {};
+
+        async function performLookup() {
+            const domain = document.getElementById("domain-input").value.trim();
+            const recordType = document.getElementById("record-type").value;
+
+            if (!domain) {
+                showError("請輸入域名");
+                return;
+            }
+
+            // Clean domain
+            const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+
+            // Hide previous results
+            document.getElementById("results").classList.add("hidden");
+            document.getElementById("error").classList.add("hidden");
+            document.getElementById("loading").classList.remove("hidden");
+
+            allResults = {};
+
+            try {
+                if (recordType === "ALL") {
+                    // Query multiple record types
+                    const types = ["A", "AAAA", "CNAME", "MX", "TXT", "NS"];
+                    await Promise.all(types.map(type => queryDNS(cleanDomain, type)));
+                } else {
+                    await queryDNS(cleanDomain, recordType);
+                }
+
+                document.getElementById("loading").classList.add("hidden");
+                displayResults();
+            } catch (error) {
+                document.getElementById("loading").classList.add("hidden");
+                showError("查詢失敗: " + error.message);
+            }
+        }
+
+        async function queryDNS(domain, type) {
+            // Using Cloudflare DNS-over-HTTPS API
+            const url = `https://cloudflare-dns.com/dns-query?name=${domain}&type=${type}`;
+
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Accept': 'application/dns-json'
+                    }
+                });
+                const data = await response.json();
+
+                if (data.Answer) {
+                    allResults[type] = data.Answer;
+                } else {
+                    allResults[type] = [];
+                }
+            } catch (error) {
+                console.error(`Error querying ${type}:`, error);
+                allResults[type] = [];
+            }
+        }
+
+        function displayResults() {
+            document.getElementById("results").classList.remove("hidden");
+
+            // A Records
+            displayRecordSection("a", "A", allResults["A"] || []);
+
+            // AAAA Records
+            displayRecordSection("aaaa", "AAAA", allResults["AAAA"] || []);
+
+            // CNAME Records
+            displayRecordSection("cname", "CNAME", allResults["CNAME"] || []);
+
+            // MX Records
+            const mxRecords = (allResults["MX"] || []).map(r => {
+                const parts = r.data.split(" ");
+                return { priority: parts[0], server: parts[1] || r.data };
+            });
+            const mxContent = document.getElementById("mx-content");
+            if (mxRecords.length > 0) {
+                mxContent.innerHTML = mxRecords
+                    .map(mx => `<div class="text-gray-700">優先順序 ${mx.priority}: ${mx.server}</div>`)
+                    .join("");
+            } else {
+                mxContent.innerHTML = '<div class="text-gray-400">無記錄</div>';
+            }
+
+            // TXT Records
+            displayRecordSection("txt", "TXT", allResults["TXT"] || []);
+
+            // NS Records
+            displayRecordSection("ns", "NS", allResults["NS"] || []);
+
+            // Raw JSON
+            document.getElementById("result-raw").textContent = JSON.stringify(allResults, null, 2);
+        }
+
+        function displayRecordSection(id, type, records) {
+            const content = document.getElementById(`${id}-content`);
+            if (records.length > 0) {
+                content.innerHTML = records
+                    .map(r => `<div class="text-gray-700">${r.data}</div>`)
+                    .join("");
+            } else {
+                content.innerHTML = '<div class="text-gray-400">無記錄</div>';
+            }
+        }
+
+        function showError(message) {
+            document.getElementById("error").classList.remove("hidden");
+            document.getElementById("error-message").textContent = message;
+        }
+
+        function loadExample(domain) {
+            document.getElementById("domain-input").value = domain;
+            performLookup();
+        }
+
+        function copyResult() {
+            const raw = document.getElementById("result-raw").textContent;
+            if (raw && raw !== "查詢結果將顯示在這裡") {
+                navigator.clipboard.writeText(raw).then(() => {
+                    const btn = event.target;
+                    const originalText = btn.textContent;
+                    btn.textContent = "已複製！";
+                    setTimeout(() => btn.textContent = originalText, 2000);
+                });
+            }
+        }
+    </script>
+</body>
+</html>

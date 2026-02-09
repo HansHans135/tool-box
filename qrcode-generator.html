@@ -1,0 +1,174 @@
+﻿<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code 產生器 - 實用小工具集</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+        body { font-family: "Inter", sans-serif; }
+    </style>
+</head>
+<body class="bg-white text-gray-900 min-h-screen antialiased flex flex-col">
+    <nav class="border-b border-gray-100 flex-none">
+        <div class="max-w-7xl mx-auto px-6 lg:px-8">
+            <div class="flex justify-between h-20 items-center">
+                <div class="flex items-center gap-2">
+                    <a href="index.html" class="w-8 h-8 bg-black rounded-lg flex items-center justify-center hover:opacity-80 transition-opacity">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+                    </a>
+                    <span class="text-xl font-bold tracking-tight">QR Code</span>
+                </div>
+                <button onclick="downloadQRCode()" class="text-sm font-semibold border border-gray-200 px-4 py-2 rounded-lg hover:border-black hover:bg-black hover:text-white transition-all">
+                    下載
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-6 lg:px-8 py-10 w-full flex-grow flex flex-col lg:flex-row gap-12">
+        
+        <!-- Left: Controls -->
+        <div class="w-full lg:w-1/2 space-y-8">
+            <!-- Type Selector -->
+            <div>
+                <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">內容類型</label>
+                <div class="flex flex-wrap gap-2">
+                    <button onclick="setType(this)" data-type="text" class="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium hover:border-black transition-all bg-black text-white type-btn">文字</button>
+                    <button onclick="setType(this)" data-type="url" class="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium hover:border-black transition-all type-btn">網址</button>
+                    <button onclick="setType(this)" data-type="email" class="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium hover:border-black transition-all type-btn">電子郵件</button>
+                    <button onclick="setType(this)" data-type="wifi" class="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium hover:border-black transition-all type-btn">WiFi</button>
+                </div>
+            </div>
+
+            <!-- Input Fields Area -->
+            <div id="input-area" class="space-y-4">
+                <!-- Inputs will be injected here via JS to keep it clean -->
+                <textarea id="main-input" class="w-full p-4 bg-gray-50 border-2 border-transparent focus:bg-white focus:border-black outline-none rounded-xl transition-all resize-none h-40" placeholder="輸入內容..." oninput="generateQRCode()"></textarea>
+            </div>
+
+             <!-- Options -->
+             <div class="pt-8 border-t border-gray-100">
+                <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">外觀</label>
+                <div class="grid grid-cols-2 gap-6">
+                    <div>
+                         <label class="block text-sm font-medium mb-2">前景顏色</label>
+                         <div class="flex items-center gap-2">
+                            <input type="color" id="fg-color" value="#000000" class="h-10 w-full cursor-pointer rounded bg-transparent" onchange="generateQRCode()">
+                         </div>
+                    </div>
+                    <div>
+                         <label class="block text-sm font-medium mb-2">背景顏色</label>
+                         <div class="flex items-center gap-2">
+                            <input type="color" id="bg-color" value="#ffffff" class="h-10 w-full cursor-pointer rounded bg-transparent" onchange="generateQRCode()">
+                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: Preview -->
+        <div class="w-full lg:w-1/2 flex items-center justify-center bg-gray-50 rounded-2xl p-8 lg:p-20 relative">
+             <div class="bg-white p-6 rounded-xl shadow-sm">
+                <canvas id="qrcode" class="max-w-full h-auto"></canvas>
+             </div>
+        </div>
+
+    </main>
+
+    <script type="module">
+        import QRCode from 'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/+esm';
+
+        let currentType = "text";
+        const inputArea = document.getElementById("input-area");
+
+        const templates = {
+            text: `<textarea id="qr-text" class="w-full p-4 bg-gray-50 border-2 border-transparent focus:bg-white focus:border-black outline-none rounded-xl transition-all resize-none h-40" placeholder="輸入文字..." oninput="generateQRCode()"></textarea>`,
+            url: `<input type="url" id="qr-url" class="w-full p-4 bg-gray-50 border-2 border-transparent focus:bg-white focus:border-black outline-none rounded-xl transition-all" placeholder="https://example.com" oninput="generateQRCode()">`,
+            email: `
+                <input type="email" id="qr-email" class="w-full p-4 bg-gray-50 border-2 border-transparent focus:bg-white focus:border-black outline-none rounded-xl transition-all mb-3" placeholder="電子郵件地址" oninput="generateQRCode()">
+                <input type="text" id="qr-subject" class="w-full p-4 bg-gray-50 border-2 border-transparent focus:bg-white focus:border-black outline-none rounded-xl transition-all" placeholder="主旨（選填）" oninput="generateQRCode()">
+            `,
+            wifi: `
+                <input type="text" id="qr-ssid" class="w-full p-4 bg-gray-50 border-2 border-transparent focus:bg-white focus:border-black outline-none rounded-xl transition-all mb-3" placeholder="網路名稱 (SSID)" oninput="generateQRCode()">
+                <input type="text" id="qr-pass" class="w-full p-4 bg-gray-50 border-2 border-transparent focus:bg-white focus:border-black outline-none rounded-xl transition-all mb-3" placeholder="密碼" oninput="generateQRCode()">
+                <select id="qr-enc" class="w-full p-4 bg-gray-50 border-2 border-transparent focus:bg-white focus:border-black outline-none rounded-xl transition-all" onchange="generateQRCode()">
+                    <option value="WPA">WPA/WPA2</option>
+                    <option value="WEP">WEP</option>
+                    <option value="nopass">無密碼</option>
+                </select>
+            `
+        };
+
+        function setType(btn) {
+            currentType = btn.dataset.type;
+            document.querySelectorAll(".type-btn").forEach(b => {
+                b.classList.remove("bg-black", "text-white");
+                b.classList.add("bg-white", "text-gray-900");
+            });
+            btn.classList.add("bg-black", "text-white");
+            btn.classList.remove("bg-white");
+            inputArea.innerHTML = templates[currentType];
+            generateQRCode();
+        }
+
+        function generateQRCode() {
+            let content = "";
+            switch(currentType) {
+                case "text":
+                    content = document.getElementById("qr-text")?.value || "";
+                    break;
+                case "url":
+                    content = document.getElementById("qr-url")?.value || "";
+                    break;
+                case "email":
+                    const email = document.getElementById("qr-email")?.value || "";
+                    const subject = document.getElementById("qr-subject")?.value || "";
+                    content = "mailto:" + email + (subject ? "?subject=" + encodeURIComponent(subject) : "");
+                    break;
+                case "wifi":
+                    const ssid = document.getElementById("qr-ssid")?.value || "";
+                    const pass = document.getElementById("qr-pass")?.value || "";
+                    const enc = document.getElementById("qr-enc")?.value || "WPA";
+                    if(ssid) {
+                        content = `WIFI:S:${ssid};T:${enc};P:${pass};;`;
+                    }
+                    break;
+            }
+            if (!content) {
+                content = "https://example.com";
+            }
+
+            const canvas = document.getElementById("qrcode");
+            const fg = document.getElementById("fg-color").value;
+            const bg = document.getElementById("bg-color").value;
+
+            QRCode.toCanvas(canvas, content, {
+                width: 256,
+                margin: 2,
+                color: { dark: fg, light: bg }
+            }, function (error) {
+                if (error) console.error(error);
+            });
+        }
+
+        function downloadQRCode() {
+            const canvas = document.getElementById("qrcode");
+            const link = document.createElement("a");
+            link.download = "qrcode.png";
+            link.href = canvas.toDataURL("image/png");
+            link.click();
+        }
+
+        // Expose to global scope for inline event handlers
+        window.setType = setType;
+        window.generateQRCode = generateQRCode;
+        window.downloadQRCode = downloadQRCode;
+
+        // Initialize
+        inputArea.innerHTML = templates.text;
+        generateQRCode();
+    </script>
+</body>
+</html>

@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>P2P 檔案傳輸 - 實用小工具集</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@700&display=swap");
+        body { font-family: "Inter", sans-serif; }
+        .pin-display { font-family: "JetBrains Mono", monospace; }
+        .file-item { animation: slideIn 0.3s ease-out; }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .progress-bar { transition: width 0.3s ease; }
+        .pin-digit { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.8); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .qr-modal { backdrop-filter: blur(4px); }
+    </style>
+</head>
+<body class="bg-white text-gray-900 min-h-screen antialiased flex flex-col">
+    <nav class="border-b border-gray-100 flex-none">
+        <div class="max-w-7xl mx-auto px-6 lg:px-8">
+            <div class="flex justify-between h-20 items-center">
+                <div class="flex items-center gap-2">
+                    <a href="index.html" class="w-8 h-8 bg-black rounded-lg flex items-center justify-center hover:opacity-80 transition-opacity">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+                    </a>
+                    <span class="text-xl font-bold tracking-tight">P2P 檔案傳輸</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span id="status-indicator" class="flex items-center gap-2 text-sm font-medium text-gray-500">
+                        <span class="w-2 h-2 bg-gray-300 rounded-full"></span>
+                        <span>未連線</span>
+                    </span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-6 lg:px-8 py-10 w-full flex-grow flex flex-col lg:flex-row gap-12">
+
+        <!-- Left: Connection & Send -->
+        <div class="w-full lg:w-1/2 space-y-8">
+            <!-- Mode Selector -->
+            <div>
+                <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">連線模式</label>
+                <div class="flex gap-2">
+                    <button onclick="setMode('send')" id="mode-send" class="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium hover:border-black transition-all bg-black text-white mode-btn flex-1">傳送端</button>
+                    <button onclick="setMode('receive')" id="mode-receive" class="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium hover:border-black transition-all mode-btn flex-1">接收端</button>
+                </div>
+            </div>
+
+            <!-- Send Mode -->
+            <div id="send-panel" class="space-y-6">
+                <!-- My ID Display -->
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">我的連線 PIN 碼</label>
+                    <div class="bg-gradient-to-br from-gray-900 to-gray-700 rounded-2xl p-8 mb-4">
+                        <div class="flex justify-center items-center gap-3 mb-4">
+                            <div class="flex gap-2">
+                                <div class="w-16 h-20 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/20">
+                                    <span id="pin-digit-1" class="text-4xl font-bold text-white pin-digit">-</span>
+                                </div>
+                                <div class="w-16 h-20 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/20">
+                                    <span id="pin-digit-2" class="text-4xl font-bold text-white pin-digit">-</span>
+                                </div>
+                                <div class="w-16 h-20 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/20">
+                                    <span id="pin-digit-3" class="text-4xl font-bold text-white pin-digit">-</span>
+                                </div>
+                                <div class="w-16 h-20 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/20">
+                                    <span id="pin-digit-4" class="text-4xl font-bold text-white pin-digit">-</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="copyMyId()" class="flex-1 px-4 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg transition-all text-sm font-semibold text-white flex items-center justify-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                </svg>
+                                複製
+                            </button>
+                            <button onclick="showQRCode()" class="flex-1 px-4 py-3 bg-white text-gray-900 hover:bg-gray-100 rounded-lg transition-all text-sm font-semibold flex items-center justify-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+                                </svg>
+                                QR Code
+                            </button>
+                        </div>
+                    </div>
+                    <input type="text" id="my-peer-id" readonly class="hidden">
+                    <p class="text-xs text-gray-500 text-center">將 PIN 碼或 QR Code 分享給對方</p>
+                </div>
+
+                <!-- Connect to Peer -->
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">連線到對方</label>
+                    <div class="flex gap-2 mb-3">
+                        <div class="flex-1 flex gap-2 bg-gray-50 rounded-xl p-3">
+                            <input type="text" id="pin-input-1" maxlength="1" pattern="\d" class="w-full p-3 bg-white border-2 border-gray-200 focus:border-black outline-none rounded-lg transition-all text-center text-2xl font-bold pin-display" placeholder="0">
+                            <input type="text" id="pin-input-2" maxlength="1" pattern="\d" class="w-full p-3 bg-white border-2 border-gray-200 focus:border-black outline-none rounded-lg transition-all text-center text-2xl font-bold pin-display" placeholder="0">
+                            <input type="text" id="pin-input-3" maxlength="1" pattern="\d" class="w-full p-3 bg-white border-2 border-gray-200 focus:border-black outline-none rounded-lg transition-all text-center text-2xl font-bold pin-display" placeholder="0">
+                            <input type="text" id="pin-input-4" maxlength="1" pattern="\d" class="w-full p-3 bg-white border-2 border-gray-200 focus:border-black outline-none rounded-lg transition-all text-center text-2xl font-bold pin-display" placeholder="0">
+                        </div>
+                        <button onclick="connectToPeer()" class="px-6 bg-black text-white rounded-xl hover:opacity-80 transition-all text-sm font-semibold">
+                            連線
+                        </button>
+                    </div>
+                    <div class="text-center">
+                        <button onclick="scanQRCode()" class="text-sm text-gray-500 hover:text-black transition-all inline-flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                            </svg>
+                            或上傳 QR Code 圖片
+                        </button>
+                    </div>
+                </div>
+
+                <!-- File Selection -->
+                <div id="file-select-area" class="hidden">
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">選擇檔案</label>
+                    <div class="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center hover:border-black transition-all cursor-pointer" onclick="document.getElementById('file-input').click()">
+                        <svg class="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                        </svg>
+                        <p class="text-sm font-medium text-gray-600">點擊選擇檔案或拖曳至此</p>
+                        <p class="text-xs text-gray-400 mt-2">支援任何檔案格式</p>
+                    </div>
+                    <input type="file" id="file-input" multiple class="hidden" onchange="handleFileSelect(event)">
+                </div>
+
+                <!-- Selected Files -->
+                <div id="selected-files" class="hidden space-y-3">
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest">已選擇的檔案</label>
+                    <div id="file-list" class="space-y-2"></div>
+                </div>
+            </div>
+
+            <!-- Receive Mode -->
+            <div id="receive-panel" class="hidden space-y-6">
+                <!-- My ID Display -->
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">我的連線 PIN 碼</label>
+                    <div class="bg-gradient-to-br from-gray-900 to-gray-700 rounded-2xl p-8 mb-4">
+                        <div class="flex justify-center items-center gap-3 mb-4">
+                            <div class="flex gap-2">
+                                <div class="w-16 h-20 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/20">
+                                    <span id="pin-digit-receive-1" class="text-4xl font-bold text-white pin-digit">-</span>
+                                </div>
+                                <div class="w-16 h-20 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/20">
+                                    <span id="pin-digit-receive-2" class="text-4xl font-bold text-white pin-digit">-</span>
+                                </div>
+                                <div class="w-16 h-20 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/20">
+                                    <span id="pin-digit-receive-3" class="text-4xl font-bold text-white pin-digit">-</span>
+                                </div>
+                                <div class="w-16 h-20 bg-white/10 backdrop-blur-sm rounded-xl flex items-center justify-center border border-white/20">
+                                    <span id="pin-digit-receive-4" class="text-4xl font-bold text-white pin-digit">-</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="copyMyIdReceive()" class="flex-1 px-4 py-3 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg transition-all text-sm font-semibold text-white flex items-center justify-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                </svg>
+                                複製
+                            </button>
+                            <button onclick="showQRCodeReceive()" class="flex-1 px-4 py-3 bg-white text-gray-900 hover:bg-gray-100 rounded-lg transition-all text-sm font-semibold flex items-center justify-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+                                </svg>
+                                QR Code
+                            </button>
+                        </div>
+                    </div>
+                    <input type="text" id="my-peer-id-receive" readonly class="hidden">
+                    <p class="text-xs text-gray-500 text-center">將 PIN 碼或 QR Code 分享給傳送端</p>
+                </div>
+
+                <!-- Waiting Status -->
+                <div id="waiting-status" class="bg-gray-50 rounded-xl p-6 text-center">
+                    <svg class="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+                    </svg>
+                    <p class="text-sm font-medium text-gray-600">等待傳送端連線...</p>
+                </div>
+
+                <!-- Connected Status (hidden by default) -->
+                <div id="connected-status" class="hidden bg-green-50 rounded-xl p-6 text-center border border-green-200">
+                    <svg class="w-12 h-12 mx-auto mb-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <p class="text-sm font-medium text-green-700">已連線，等待接收檔案...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: Transfer Status & Received Files -->
+        <div class="w-full lg:w-1/2 flex flex-col gap-6">
+            <!-- Connection Status -->
+            <div class="bg-gray-50 rounded-2xl p-6">
+                <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">連線狀態</label>
+                <div id="connection-status" class="space-y-3">
+                    <div class="flex items-center justify-between p-4 bg-white rounded-lg">
+                        <span class="text-sm font-medium">連線狀態</span>
+                        <span id="conn-status-text" class="text-sm text-gray-500">未連線</span>
+                    </div>
+                    <div class="flex items-center justify-between p-4 bg-white rounded-lg">
+                        <span class="text-sm font-medium">對方 PIN 碼</span>
+                        <span id="remote-peer-id" class="text-sm text-gray-500 font-mono">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Transfer Progress -->
+            <div id="transfer-section" class="hidden bg-gray-50 rounded-2xl p-6">
+                <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">傳輸進度</label>
+                <div id="transfer-list" class="space-y-3"></div>
+            </div>
+
+            <!-- Received Files -->
+            <div id="received-section" class="hidden bg-gray-50 rounded-2xl p-6">
+                <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">已接收檔案</label>
+                <div id="received-list" class="space-y-3"></div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- QR Code Modal -->
+    <div id="qr-modal" class="hidden fixed inset-0 bg-black/50 qr-modal flex items-center justify-center z-50 p-6" onclick="closeQRModal(event)">
+        <div class="bg-white rounded-2xl p-8 max-w-sm w-full" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-lg font-bold">掃描 QR Code 連線</h3>
+                <button onclick="closeQRModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-all">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="bg-white p-4 rounded-xl border-2 border-gray-100 mb-4 flex items-center justify-center">
+                <canvas id="connection-qrcode" class="max-w-full h-auto"></canvas>
+            </div>
+            <div class="text-center">
+                <p class="text-sm text-gray-600 mb-2">PIN 碼:</p>
+                <p class="text-3xl font-bold pin-display mb-3" id="qr-pin-display">----</p>
+                <p class="text-xs text-gray-400">掃描後將自動開啟頁面並填入 PIN 碼</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- QR Scanner Modal -->
+    <div id="scanner-modal" class="hidden fixed inset-0 bg-black/50 qr-modal flex items-center justify-center z-50 p-6" onclick="closeScannerModal(event)">
+        <div class="bg-white rounded-2xl p-8 max-w-sm w-full" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-lg font-bold">上傳 QR Code</h3>
+                <button onclick="closeScannerModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-all">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center hover:border-black transition-all cursor-pointer mb-4" onclick="document.getElementById('qr-upload').click()">
+                <svg class="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+                <p class="text-sm font-medium text-gray-600">點擊選擇 QR Code 圖片</p>
+            </div>
+            <input type="file" id="qr-upload" accept="image/*" class="hidden" onchange="handleQRUpload(event)">
+            <p class="text-xs text-gray-500 text-center">支援 JPG, PNG 格式</p>
+        </div>
+    </div>
+
+    <script type="module">
+        import QRCode from 'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/+esm';
+        window.QRCodeLib = QRCode;
+    </script>
+
+    <script>
+        let peer = null;
+        let connection = null;
+        let currentMode = 'send';
+        let selectedFiles = [];
+        let receivedChunks = {};
+        let myPin = '';
+
+        // Generate 4-digit PIN
+        function generatePin() {
+            return Math.floor(1000 + Math.random() * 9000).toString();
+        }
+
+        // Initialize PeerJS
+        function initPeer() {
+            myPin = generatePin();
+            peer = new Peer('pin-' + myPin);
+
+            peer.on('open', (id) => {
+                document.getElementById('my-peer-id').value = myPin;
+                document.getElementById('my-peer-id-receive').value = myPin;
+                updatePinDisplay(myPin);
+                updateStatus('ready', '已就緒');
+            });
+
+            peer.on('connection', (conn) => {
+                connection = conn;
+                setupConnection(conn);
+                const remotePeer = conn.metadata?.pin || conn.peer.replace('pin-', '');
+                document.getElementById('remote-peer-id').textContent = remotePeer;
+            });
+
+            peer.on('error', (err) => {
+                console.error('Peer error:', err);
+                alert('連線錯誤: ' + err.message);
+            });
+        }
+
+        // Update PIN display
+        function updatePinDisplay(pin) {
+            for (let i = 0; i < 4; i++) {
+                const digit = pin[i] || '-';
+                document.getElementById(`pin-digit-${i + 1}`).textContent = digit;
+                document.getElementById(`pin-digit-receive-${i + 1}`).textContent = digit;
+            }
+        }
+
+        // Set mode
+        function setMode(mode) {
+            currentMode = mode;
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.classList.remove('bg-black', 'text-white');
+                btn.classList.add('bg-white', 'text-gray-900');
+            });
+            document.getElementById(`mode-${mode}`).classList.add('bg-black', 'text-white');
+            document.getElementById(`mode-${mode}`).classList.remove('bg-white');
+
+            if (mode === 'send') {
+                document.getElementById('send-panel').classList.remove('hidden');
+                document.getElementById('receive-panel').classList.add('hidden');
+            } else {
+                document.getElementById('send-panel').classList.add('hidden');
+                document.getElementById('receive-panel').classList.remove('hidden');
+            }
+        }
+
+        // Connect to peer
+        function connectToPeer() {
+            const pin1 = document.getElementById('pin-input-1').value;
+            const pin2 = document.getElementById('pin-input-2').value;
+            const pin3 = document.getElementById('pin-input-3').value;
+            const pin4 = document.getElementById('pin-input-4').value;
+            const inputPin = pin1 + pin2 + pin3 + pin4;
+
+            if (!inputPin || inputPin.length !== 4) {
+                alert('請輸入完整的 4 位數 PIN 碼');
+                return;
+            }
+
+            if (!/^\d{4}$/.test(inputPin)) {
+                alert('請輸入正確的 4 位數 PIN 碼');
+                return;
+            }
+
+            const customPeerId = 'pin-' + inputPin;
+            connection = peer.connect(customPeerId, {
+                metadata: { pin: myPin }
+            });
+            setupConnection(connection);
+        }
+
+        // Setup PIN inputs
+        function setupPinInputs() {
+            const inputs = ['pin-input-1', 'pin-input-2', 'pin-input-3', 'pin-input-4'];
+            inputs.forEach((id, index) => {
+                const input = document.getElementById(id);
+
+                input.addEventListener('input', (e) => {
+                    const value = e.target.value;
+                    if (value.length === 1 && /\d/.test(value)) {
+                        if (index < inputs.length - 1) {
+                            document.getElementById(inputs[index + 1]).focus();
+                        }
+                    }
+                });
+
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Backspace' && !e.target.value && index > 0) {
+                        document.getElementById(inputs[index - 1]).focus();
+                    } else if (e.key === 'Enter' && index === inputs.length - 1) {
+                        connectToPeer();
+                    }
+                });
+
+                input.addEventListener('paste', (e) => {
+                    e.preventDefault();
+                    const paste = e.clipboardData.getData('text').trim();
+                    if (/^\d{4}$/.test(paste)) {
+                        inputs.forEach((inputId, i) => {
+                            document.getElementById(inputId).value = paste[i];
+                        });
+                        document.getElementById(inputs[3]).focus();
+                    }
+                });
+            });
+        }
+
+        // Setup connection handlers
+        function setupConnection(conn) {
+            conn.on('open', () => {
+                updateStatus('connected', '已連線');
+                const remotePeer = conn.metadata?.pin || conn.peer.replace('pin-', '');
+                document.getElementById('remote-peer-id').textContent = remotePeer;
+                document.getElementById('file-select-area').classList.remove('hidden');
+
+                // Update receive mode UI
+                const waitingStatus = document.getElementById('waiting-status');
+                const connectedStatus = document.getElementById('connected-status');
+                if (waitingStatus && connectedStatus) {
+                    waitingStatus.classList.add('hidden');
+                    connectedStatus.classList.remove('hidden');
+                }
+            });
+
+            conn.on('data', (data) => {
+                handleReceivedData(data);
+            });
+
+            conn.on('close', () => {
+                updateStatus('disconnected', '已斷線');
+                document.getElementById('file-select-area').classList.add('hidden');
+
+                // Reset receive mode UI
+                const waitingStatus = document.getElementById('waiting-status');
+                const connectedStatus = document.getElementById('connected-status');
+                if (waitingStatus && connectedStatus) {
+                    waitingStatus.classList.remove('hidden');
+                    connectedStatus.classList.add('hidden');
+                }
+            });
+        }
+
+        // Handle file selection
+        function handleFileSelect(event) {
+            selectedFiles = Array.from(event.target.files);
+            displaySelectedFiles();
+        }
+
+        // Display selected files
+        function displaySelectedFiles() {
+            const fileList = document.getElementById('file-list');
+            const container = document.getElementById('selected-files');
+
+            if (selectedFiles.length === 0) {
+                container.classList.add('hidden');
+                return;
+            }
+
+            container.classList.remove('hidden');
+            fileList.innerHTML = selectedFiles.map((file, index) => `
+                <div class="file-item flex items-center justify-between p-4 bg-white rounded-lg border border-gray-100">
+                    <div class="flex items-center gap-3 flex-1 min-w-0">
+                        <svg class="w-5 h-5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                        </svg>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-sm font-medium truncate">${file.name}</p>
+                            <p class="text-xs text-gray-500">${formatFileSize(file.size)}</p>
+                        </div>
+                    </div>
+                    <button onclick="sendFile(${index})" class="ml-3 px-3 py-1 bg-black text-white rounded text-xs font-semibold hover:opacity-80 transition-all flex-shrink-0">
+                        傳送
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        // Send file
+        async function sendFile(index) {
+            if (!connection || !connection.open) {
+                alert('請先連線到對方');
+                return;
+            }
+
+            const file = selectedFiles[index];
+            const chunkSize = 16384;
+            const totalChunks = Math.ceil(file.size / chunkSize);
+
+            connection.send({
+                type: 'file-start',
+                name: file.name,
+                size: file.size,
+                totalChunks: totalChunks
+            });
+
+            showTransferProgress(file.name, totalChunks);
+
+            for (let i = 0; i < totalChunks; i++) {
+                const start = i * chunkSize;
+                const end = Math.min(start + chunkSize, file.size);
+                const chunk = file.slice(start, end);
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    connection.send({
+                        type: 'file-chunk',
+                        name: file.name,
+                        chunk: i,
+                        data: e.target.result
+                    });
+                    updateTransferProgress(file.name, i + 1, totalChunks);
+                };
+                reader.readAsArrayBuffer(chunk);
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
+
+            connection.send({
+                type: 'file-end',
+                name: file.name
+            });
+        }
+
+        // Handle received data
+        function handleReceivedData(data) {
+            if (data.type === 'file-start') {
+                receivedChunks[data.name] = {
+                    chunks: new Array(data.totalChunks),
+                    received: 0,
+                    total: data.totalChunks,
+                    size: data.size
+                };
+                showReceiveProgress(data.name, data.totalChunks);
+            } else if (data.type === 'file-chunk') {
+                const fileData = receivedChunks[data.name];
+                fileData.chunks[data.chunk] = data.data;
+                fileData.received++;
+                updateReceiveProgress(data.name, fileData.received, fileData.total);
+            } else if (data.type === 'file-end') {
+                completeFileReceive(data.name);
+            }
+        }
+
+        // Complete file receive
+        function completeFileReceive(fileName) {
+            const fileData = receivedChunks[fileName];
+            const blob = new Blob(fileData.chunks);
+            showReceivedFile(fileName, blob, fileData.size);
+            delete receivedChunks[fileName];
+        }
+
+        // Show transfer progress
+        function showTransferProgress(fileName, total) {
+            const section = document.getElementById('transfer-section');
+            const list = document.getElementById('transfer-list');
+            section.classList.remove('hidden');
+
+            const progressId = `progress-${fileName.replace(/[^a-z0-9]/gi, '')}`;
+            const progressHtml = `
+                <div id="${progressId}" class="p-4 bg-white rounded-lg">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-medium truncate flex-1">${fileName}</span>
+                        <span class="text-xs text-gray-500 ml-2"><span class="progress-text">0</span>/${total}</span>
+                    </div>
+                    <div class="w-full bg-gray-100 rounded-full h-2">
+                        <div class="progress-bar bg-black h-2 rounded-full" style="width: 0%"></div>
+                    </div>
+                </div>
+            `;
+            list.insertAdjacentHTML('beforeend', progressHtml);
+        }
+
+        // Update transfer progress
+        function updateTransferProgress(fileName, current, total) {
+            const progressId = `progress-${fileName.replace(/[^a-z0-9]/gi, '')}`;
+            const element = document.getElementById(progressId);
+            if (element) {
+                const percent = (current / total * 100).toFixed(0);
+                element.querySelector('.progress-bar').style.width = percent + '%';
+                element.querySelector('.progress-text').textContent = current;
+                if (current === total) {
+                    setTimeout(() => element.remove(), 2000);
+                }
+            }
+        }
+
+        // Show receive progress
+        function showReceiveProgress(fileName, total) {
+            const section = document.getElementById('transfer-section');
+            const list = document.getElementById('transfer-list');
+            section.classList.remove('hidden');
+
+            const progressId = `receive-${fileName.replace(/[^a-z0-9]/gi, '')}`;
+            const progressHtml = `
+                <div id="${progressId}" class="p-4 bg-white rounded-lg">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-sm font-medium truncate flex-1">接收: ${fileName}</span>
+                        <span class="text-xs text-gray-500 ml-2"><span class="progress-text">0</span>/${total}</span>
+                    </div>
+                    <div class="w-full bg-gray-100 rounded-full h-2">
+                        <div class="progress-bar bg-black h-2 rounded-full" style="width: 0%"></div>
+                    </div>
+                </div>
+            `;
+            list.insertAdjacentHTML('beforeend', progressHtml);
+        }
+
+        // Update receive progress
+        function updateReceiveProgress(fileName, current, total) {
+            const progressId = `receive-${fileName.replace(/[^a-z0-9]/gi, '')}`;
+            const element = document.getElementById(progressId);
+            if (element) {
+                const percent = (current / total * 100).toFixed(0);
+                element.querySelector('.progress-bar').style.width = percent + '%';
+                element.querySelector('.progress-text').textContent = current;
+                if (current === total) {
+                    setTimeout(() => element.remove(), 2000);
+                }
+            }
+        }
+
+        // Show received file
+        function showReceivedFile(fileName, blob, size) {
+            const section = document.getElementById('received-section');
+            const list = document.getElementById('received-list');
+            section.classList.remove('hidden');
+
+            const url = URL.createObjectURL(blob);
+            const fileHtml = `
+                <div class="file-item flex items-center justify-between p-4 bg-white rounded-lg border border-gray-100">
+                    <div class="flex items-center gap-3 flex-1 min-w-0">
+                        <svg class="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                        </svg>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-sm font-medium truncate">${fileName}</p>
+                            <p class="text-xs text-gray-500">${formatFileSize(size)}</p>
+                        </div>
+                    </div>
+                    <a href="${url}" download="${fileName}" class="ml-3 px-3 py-1 bg-black text-white rounded text-xs font-semibold hover:opacity-80 transition-all flex-shrink-0">
+                        下載
+                    </a>
+                </div>
+            `;
+            list.insertAdjacentHTML('afterbegin', fileHtml);
+        }
+
+        // Update status
+        function updateStatus(status, text) {
+            const indicator = document.getElementById('status-indicator');
+            const statusText = document.getElementById('conn-status-text');
+
+            const colors = {
+                ready: 'bg-yellow-400',
+                connected: 'bg-green-500',
+                disconnected: 'bg-gray-300'
+            };
+
+            indicator.querySelector('.w-2').className = `w-2 h-2 rounded-full ${colors[status] || 'bg-gray-300'}`;
+            indicator.querySelector('span:last-child').textContent = text;
+            statusText.textContent = text;
+        }
+
+        // QR Code functions
+        function showQRCode() {
+            const modal = document.getElementById('qr-modal');
+            const canvas = document.getElementById('connection-qrcode');
+            const pinDisplay = document.getElementById('qr-pin-display');
+
+            pinDisplay.textContent = myPin;
+            modal.classList.remove('hidden');
+
+            // Create URL with PIN parameter
+            const currentUrl = window.location.href.split('?')[0];
+            const qrUrl = `${currentUrl}?pin=${myPin}`;
+
+            // Generate QR code with URL
+            window.QRCodeLib.toCanvas(canvas, qrUrl, {
+                width: 256,
+                margin: 2,
+                color: { dark: '#000000', light: '#ffffff' }
+            });
+        }
+
+        function showQRCodeReceive() {
+            showQRCode();
+        }
+
+        function closeQRModal(event) {
+            if (event && event.target !== event.currentTarget) return;
+            document.getElementById('qr-modal').classList.add('hidden');
+        }
+
+        function scanQRCode() {
+            document.getElementById('scanner-modal').classList.remove('hidden');
+        }
+
+        function closeScannerModal(event) {
+            if (event && event.target !== event.currentTarget) return;
+            document.getElementById('scanner-modal').classList.add('hidden');
+        }
+
+        async function handleQRUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const img = new Image();
+                img.onload = async () => {
+                    alert('請手動輸入 QR Code 中的 PIN 碼');
+                    closeScannerModal();
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Copy functions
+        function copyMyId() {
+            navigator.clipboard.writeText(myPin).then(() => {
+                alert('已複製 PIN 碼: ' + myPin);
+            });
+        }
+
+        function copyMyIdReceive() {
+            navigator.clipboard.writeText(myPin).then(() => {
+                alert('已複製 PIN 碼: ' + myPin);
+            });
+        }
+
+        // Format file size
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        // Drag and drop
+        const dropArea = document.getElementById('file-select-area');
+        if (dropArea) {
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }, false);
+            });
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropArea.addEventListener(eventName, () => {
+                    dropArea.classList.add('border-black');
+                }, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, () => {
+                    dropArea.classList.remove('border-black');
+                }, false);
+            });
+
+            dropArea.addEventListener('drop', (e) => {
+                const files = e.dataTransfer.files;
+                document.getElementById('file-input').files = files;
+                handleFileSelect({ target: { files: files } });
+            }, false);
+        }
+
+        // Initialize
+        initPeer();
+        setupPinInputs();
+
+        // Check for PIN in URL parameters
+        window.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const pinFromUrl = urlParams.get('pin');
+
+            if (pinFromUrl && /^\d{4}$/.test(pinFromUrl)) {
+                // Auto-fill PIN inputs
+                const inputs = ['pin-input-1', 'pin-input-2', 'pin-input-3', 'pin-input-4'];
+                inputs.forEach((inputId, i) => {
+                    document.getElementById(inputId).value = pinFromUrl[i];
+                });
+
+                // Show notification
+                setTimeout(() => {
+                    if (confirm(`檢測到 PIN 碼: ${pinFromUrl}\n是否立即連線？`)) {
+                        connectToPeer();
+                    }
+                }, 500);
+            }
+        });
+    </script>
+</body>
+</html>

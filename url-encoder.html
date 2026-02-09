@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URL 編解碼 - 實用小工具集</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+        body { font-family: "Inter", sans-serif; }
+    </style>
+</head>
+<body class="bg-white text-gray-900 min-h-screen antialiased flex flex-col">
+    <nav class="border-b border-gray-100 flex-none">
+        <div class="max-w-7xl mx-auto px-6 lg:px-8">
+            <div class="flex justify-between h-20 items-center">
+                <div class="flex items-center gap-2">
+                    <a href="index.html" class="w-8 h-8 bg-black rounded-lg flex items-center justify-center hover:opacity-80 transition-opacity">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+                    </a>
+                    <span class="text-xl font-bold tracking-tight">URL 編解碼</span>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="copyResult()" class="text-sm font-semibold border border-gray-200 px-4 py-2 rounded-lg hover:border-black hover:bg-black hover:text-white transition-all">
+                        複製結果
+                    </button>
+                    <button onclick="swapContent()" class="text-sm font-semibold border border-gray-200 px-4 py-2 rounded-lg hover:border-black hover:bg-black hover:text-white transition-all">
+                        交換
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-6 lg:px-8 py-10 w-full flex-grow flex flex-col gap-8">
+
+        <!-- Mode Selector -->
+        <div>
+            <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">轉換模式</label>
+            <div class="flex flex-wrap gap-2">
+                <button onclick="setMode('encode')" class="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium hover:border-black transition-all bg-black text-white mode-btn" data-mode="encode">編碼 (Encode)</button>
+                <button onclick="setMode('decode')" class="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium hover:border-black transition-all mode-btn" data-mode="decode">解碼 (Decode)</button>
+                <button onclick="setMode('component')" class="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium hover:border-black transition-all mode-btn" data-mode="component">元件編碼</button>
+            </div>
+        </div>
+
+        <!-- Input/Output Areas -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 flex-grow">
+            <!-- Input -->
+            <div class="flex flex-col">
+                <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">輸入</label>
+                <textarea id="input" class="w-full p-4 bg-gray-50 border-2 border-transparent focus:bg-white focus:border-black outline-none rounded-xl transition-all resize-none flex-grow min-h-[400px]" placeholder="輸入要編碼或解碼的文字..." oninput="processURL()"></textarea>
+                <div class="mt-2 text-sm text-gray-500">
+                    字元數: <span id="input-length">0</span>
+                </div>
+            </div>
+
+            <!-- Output -->
+            <div class="flex flex-col">
+                <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">輸出</label>
+                <textarea id="output" readonly class="w-full p-4 bg-gray-50 border-2 border-gray-100 outline-none rounded-xl resize-none flex-grow min-h-[400px] font-mono text-sm" placeholder="結果將顯示在這裡..."></textarea>
+                <div class="mt-2 text-sm text-gray-500">
+                    字元數: <span id="output-length">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Examples -->
+        <div class="pt-8 border-t border-gray-100">
+            <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">範例</label>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <button onclick="loadExample(0)" class="p-4 text-left border border-gray-200 rounded-lg hover:border-black transition-all">
+                    <div class="font-semibold mb-1">中文網址</div>
+                    <div class="text-sm text-gray-500 truncate">https://example.com/搜尋?關鍵字=測試</div>
+                </button>
+                <button onclick="loadExample(1)" class="p-4 text-left border border-gray-200 rounded-lg hover:border-black transition-all">
+                    <div class="font-semibold mb-1">特殊字元</div>
+                    <div class="text-sm text-gray-500 truncate">Hello World & Friends!</div>
+                </button>
+                <button onclick="loadExample(2)" class="p-4 text-left border border-gray-200 rounded-lg hover:border-black transition-all">
+                    <div class="font-semibold mb-1">完整URL</div>
+                    <div class="text-sm text-gray-500 truncate">https://site.com?name=張三&age=25</div>
+                </button>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        let currentMode = "encode";
+
+        const examples = [
+            "https://example.com/搜尋?關鍵字=測試",
+            "Hello World & Friends!",
+            "https://site.com?name=張三&age=25"
+        ];
+
+        function setMode(mode) {
+            currentMode = mode;
+            document.querySelectorAll(".mode-btn").forEach(b => {
+                b.classList.remove("bg-black", "text-white");
+                b.classList.add("bg-white", "text-gray-900");
+            });
+            const btn = document.querySelector(`[data-mode="${mode}"]`);
+            btn.classList.add("bg-black", "text-white");
+            btn.classList.remove("bg-white");
+            processURL();
+        }
+
+        function processURL() {
+            const input = document.getElementById("input").value;
+            const output = document.getElementById("output");
+
+            document.getElementById("input-length").textContent = input.length;
+
+            if (!input) {
+                output.value = "";
+                document.getElementById("output-length").textContent = "0";
+                return;
+            }
+
+            try {
+                let result = "";
+                switch(currentMode) {
+                    case "encode":
+                        result = encodeURI(input);
+                        break;
+                    case "decode":
+                        result = decodeURI(input);
+                        break;
+                    case "component":
+                        result = encodeURIComponent(input);
+                        break;
+                }
+                output.value = result;
+                document.getElementById("output-length").textContent = result.length;
+            } catch(e) {
+                output.value = "錯誤: " + e.message;
+                document.getElementById("output-length").textContent = "0";
+            }
+        }
+
+        function copyResult() {
+            const output = document.getElementById("output");
+            if (output.value) {
+                navigator.clipboard.writeText(output.value).then(() => {
+                    const btn = event.target;
+                    const originalText = btn.textContent;
+                    btn.textContent = "已複製！";
+                    setTimeout(() => btn.textContent = originalText, 2000);
+                });
+            }
+        }
+
+        function swapContent() {
+            const input = document.getElementById("input");
+            const output = document.getElementById("output");
+            const temp = input.value;
+            input.value = output.value;
+            output.value = temp;
+            processURL();
+        }
+
+        function loadExample(index) {
+            document.getElementById("input").value = examples[index];
+            processURL();
+        }
+
+        // Initialize
+        processURL();
+    </script>
+</body>
+</html>
