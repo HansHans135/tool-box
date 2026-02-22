@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>P2P 銀幕分享 - 實用小工具集</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@700&display=swap");
+        body { font-family: "Inter", sans-serif; }
+        .pin-display { font-family: "JetBrains Mono", monospace; }
+        .pin-digit { 
+            animation: fadeIn 0.3s ease-out; 
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.8); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        .qr-modal { backdrop-filter: blur(8px); }
+        video { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: contain; 
+            background: #000;
+            border-radius: 0.75rem;
+        }
+        .control-btn {
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .control-btn:hover {
+            box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+            transform: translateY(-1px);
+        }
+        .control-btn:active {
+            transform: scale(0.95);
+        }
+        .card-shadow {
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .card-shadow:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        .pin-input {
+            transition: all 0.2s ease;
+        }
+        .pin-input:focus {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .fullscreen-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+            z-index: 9999;
+            display: none;
+            animation: fadeInOverlay 0.3s ease;
+        }
+        @keyframes fadeInOverlay {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .fullscreen-overlay.active {
+            display: flex;
+            flex-direction: column;
+        }
+        .fullscreen-overlay video {
+            border-radius: 0;
+            object-fit: contain;
+            flex: 1;
+        }
+        .fullscreen-controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .fullscreen-overlay:hover .fullscreen-controls {
+            opacity: 1;
+        }
+        .gradient-border {
+            position: relative;
+            background: linear-gradient(145deg, #1f2937, #111827);
+        }
+        .mode-btn {
+            transition: all 0.2s ease;
+        }
+        .mode-btn:hover {
+            transform: translateY(-1px);
+        }
+    </style>
+</head>
+<body class="bg-white text-gray-900 min-h-screen antialiased flex flex-col">
+    <nav class="border-b border-gray-100 flex-none">
+        <div class="max-w-7xl mx-auto px-6 lg:px-8">
+            <div class="flex justify-between h-20 items-center">
+                <div class="flex items-center gap-2">
+                    <a href="index.html" class="w-8 h-8 bg-black rounded-lg flex items-center justify-center hover:opacity-80 transition-opacity">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+                    </a>
+                    <span class="text-xl font-bold tracking-tight">P2P 銀幕分享</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span id="status-indicator" class="flex items-center gap-2 text-sm font-medium text-gray-500">
+                        <span class="w-2 h-2 bg-gray-300 rounded-full"></span>
+                        <span>未連線</span>
+                    </span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-6 lg:px-8 py-10 w-full flex-grow flex flex-col lg:flex-row gap-12">
+
+        <!-- Left: Connection & Controls -->
+        <div class="w-full lg:w-1/3 space-y-8">
+            <!-- Mode Selector -->
+            <div>
+                <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">連線模式</label>
+                <div class="flex gap-3">
+                    <button onclick="setMode('share')" id="mode-share" class="px-4 py-3 rounded-xl border-2 border-gray-200 text-sm font-semibold hover:border-black transition-all bg-black text-white mode-btn flex-1 shadow-sm">分享端</button>
+                    <button onclick="setMode('view')" id="mode-view" class="px-4 py-3 rounded-xl border-2 border-gray-200 text-sm font-semibold hover:border-black transition-all mode-btn flex-1 shadow-sm">觀看端</button>
+                </div>
+            </div>
+
+            <!-- Share Mode Panel -->
+            <div id="share-panel" class="space-y-6">
+                <!-- My PIN Display -->
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">我的連線 PIN 碼</label>
+                    <div class="gradient-border rounded-2xl p-6 mb-4 shadow-lg">
+                        <div class="flex justify-center items-center gap-1.5 mb-6 flex-wrap sm:flex-nowrap">
+                            <span id="pin-digit-1" class="pin-digit flex-1 min-w-[2.5rem] max-w-[3rem] h-14 bg-white/10 rounded-lg flex items-center justify-center text-2xl sm:text-3xl font-bold text-white">-</span>
+                            <span id="pin-digit-2" class="pin-digit flex-1 min-w-[2.5rem] max-w-[3rem] h-14 bg-white/10 rounded-lg flex items-center justify-center text-2xl sm:text-3xl font-bold text-white">-</span>
+                            <span id="pin-digit-3" class="pin-digit flex-1 min-w-[2.5rem] max-w-[3rem] h-14 bg-white/10 rounded-lg flex items-center justify-center text-2xl sm:text-3xl font-bold text-white">-</span>
+                            <span id="pin-digit-4" class="pin-digit flex-1 min-w-[2.5rem] max-w-[3rem] h-14 bg-white/10 rounded-lg flex items-center justify-center text-2xl sm:text-3xl font-bold text-white">-</span>
+                            <span class="text-white/30 text-xl sm:text-2xl px-1">-</span>
+                            <span id="pin-digit-5" class="pin-digit flex-1 min-w-[2.5rem] max-w-[3rem] h-14 bg-white/10 rounded-lg flex items-center justify-center text-2xl sm:text-3xl font-bold text-white">-</span>
+                            <span id="pin-digit-6" class="pin-digit flex-1 min-w-[2.5rem] max-w-[3rem] h-14 bg-white/10 rounded-lg flex items-center justify-center text-2xl sm:text-3xl font-bold text-white">-</span>
+                            <span id="pin-digit-7" class="pin-digit flex-1 min-w-[2.5rem] max-w-[3rem] h-14 bg-white/10 rounded-lg flex items-center justify-center text-2xl sm:text-3xl font-bold text-white">-</span>
+                            <span id="pin-digit-8" class="pin-digit flex-1 min-w-[2.5rem] max-w-[3rem] h-14 bg-white/10 rounded-lg flex items-center justify-center text-2xl sm:text-3xl font-bold text-white">-</span>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="copyMyId()" class="flex-1 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white text-sm font-semibold transition-all">
+                                <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                </svg>
+                                複製
+                            </button>
+                            <button onclick="showQRCode()" class="flex-1 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white text-sm font-semibold transition-all">
+                                <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+                                </svg>
+                                QR Code
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Media Controls -->
+                <div id="media-controls" class="hidden space-y-4">
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">分享來源</label>
+                    
+                    <!-- Screen Share -->
+                    <div class="bg-gray-50 rounded-xl p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 bg-black rounded-lg flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                                    </svg>
+                                </div>
+                                <span class="font-semibold">螢幕分享</span>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="screen-toggle" class="sr-only peer" onchange="toggleScreen()">
+                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-black"></div>
+                            </label>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-2">💡 選擇分享時請勾選「也分享音訊」以傳送系統聲音</p>
+                    </div>
+
+                    <!-- Camera -->
+                    <div class="bg-gray-50 rounded-xl p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 bg-black rounded-lg flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                    </svg>
+                                </div>
+                                <span class="font-semibold">鏡頭</span>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="camera-toggle" class="sr-only peer" onchange="toggleCamera()">
+                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-black"></div>
+                            </label>
+                        </div>
+                        <select id="camera-select" class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black">
+                            <option value="">選擇鏡頭裝置...</option>
+                        </select>
+                    </div>
+
+                    <!-- Microphone -->
+                    <div class="bg-gray-50 rounded-xl p-4">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 bg-black rounded-lg flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                                    </svg>
+                                </div>
+                                <span class="font-semibold">麥克風</span>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="mic-toggle" class="sr-only peer" onchange="toggleMicrophone()">
+                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-black"></div>
+                            </label>
+                        </div>
+                        <select id="mic-select" class="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black">
+                            <option value="">選擇麥克風裝置...</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Waiting Status -->
+                <div id="waiting-connection" class="bg-gray-50 rounded-xl p-6 text-center">
+                    <svg class="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                    </svg>
+                    <p class="text-sm font-medium text-gray-600">等待觀看端連線...</p>
+                </div>
+            </div>
+
+            <!-- View Mode Panel -->
+            <div id="view-panel" class="hidden space-y-6">
+                <!-- My PIN Display -->
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">我的連線 PIN 碼</label>
+                    <div class="gradient-border rounded-2xl p-6 mb-4 shadow-lg">
+                        <div class="flex justify-center items-center gap-1.5 mb-6 flex-wrap sm:flex-nowrap">
+                            <span id="pin-digit-view-1" class="pin-digit flex-1 min-w-[2.5rem] max-w-[3rem] h-14 bg-white/10 rounded-lg flex items-center justify-center text-2xl sm:text-3xl font-bold text-white">-</span>
+                            <span id="pin-digit-view-2" class="pin-digit flex-1 min-w-[2.5rem] max-w-[3rem] h-14 bg-white/10 rounded-lg flex items-center justify-center text-2xl sm:text-3xl font-bold text-white">-</span>
+                            <span id="pin-digit-view-3" class="pin-digit flex-1 min-w-[2.5rem] max-w-[3rem] h-14 bg-white/10 rounded-lg flex items-center justify-center text-2xl sm:text-3xl font-bold text-white">-</span>
+                            <span id="pin-digit-view-4" class="pin-digit flex-1 min-w-[2.5rem] max-w-[3rem] h-14 bg-white/10 rounded-lg flex items-center justify-center text-2xl sm:text-3xl font-bold text-white">-</span>
+                            <span class="text-white/30 text-xl sm:text-2xl px-1">-</span>
+                            <span id="pin-digit-view-5" class="pin-digit flex-1 min-w-[2.5rem] max-w-[3rem] h-14 bg-white/10 rounded-lg flex items-center justify-center text-2xl sm:text-3xl font-bold text-white">-</span>
+                            <span id="pin-digit-view-6" class="pin-digit flex-1 min-w-[2.5rem] max-w-[3rem] h-14 bg-white/10 rounded-lg flex items-center justify-center text-2xl sm:text-3xl font-bold text-white">-</span>
+                            <span id="pin-digit-view-7" class="pin-digit flex-1 min-w-[2.5rem] max-w-[3rem] h-14 bg-white/10 rounded-lg flex items-center justify-center text-2xl sm:text-3xl font-bold text-white">-</span>
+                            <span id="pin-digit-view-8" class="pin-digit flex-1 min-w-[2.5rem] max-w-[3rem] h-14 bg-white/10 rounded-lg flex items-center justify-center text-2xl sm:text-3xl font-bold text-white">-</span>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="copyMyIdView()" class="flex-1 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white text-sm font-semibold transition-all">
+                                <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                </svg>
+                                複製
+                            </button>
+                            <button onclick="showQRCodeView()" class="flex-1 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white text-sm font-semibold transition-all">
+                                <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+                                </svg>
+                                QR Code
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Connect to Sharer -->
+                <div>
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">連線到分享端</label>
+                    <div class="mb-4">
+                        <div class="flex gap-1.5 bg-gray-50 rounded-xl p-3 shadow-sm overflow-x-auto">
+                            <input type="text" id="pin-input-1" maxlength="1" class="pin-input flex-1 min-w-[2.5rem] max-w-[3rem] h-12 text-center text-2xl font-bold bg-white border-2 border-gray-200 rounded-lg focus:outline-none focus:border-black" placeholder="0">
+                            <input type="text" id="pin-input-2" maxlength="1" class="pin-input flex-1 min-w-[2.5rem] max-w-[3rem] h-12 text-center text-2xl font-bold bg-white border-2 border-gray-200 rounded-lg focus:outline-none focus:border-black" placeholder="0">
+                            <input type="text" id="pin-input-3" maxlength="1" class="pin-input flex-1 min-w-[2.5rem] max-w-[3rem] h-12 text-center text-2xl font-bold bg-white border-2 border-gray-200 rounded-lg focus:outline-none focus:border-black" placeholder="0">
+                            <input type="text" id="pin-input-4" maxlength="1" class="pin-input flex-1 min-w-[2.5rem] max-w-[3rem] h-12 text-center text-2xl font-bold bg-white border-2 border-gray-200 rounded-lg focus:outline-none focus:border-black" placeholder="0">
+                            <span class="w-3 flex items-center justify-center text-gray-400 text-xl font-bold">-</span>
+                            <input type="text" id="pin-input-5" maxlength="1" class="pin-input flex-1 min-w-[2.5rem] max-w-[3rem] h-12 text-center text-2xl font-bold bg-white border-2 border-gray-200 rounded-lg focus:outline-none focus:border-black" placeholder="0">
+                            <input type="text" id="pin-input-6" maxlength="1" class="pin-input flex-1 min-w-[2.5rem] max-w-[3rem] h-12 text-center text-2xl font-bold bg-white border-2 border-gray-200 rounded-lg focus:outline-none focus:border-black" placeholder="0">
+                            <input type="text" id="pin-input-7" maxlength="1" class="pin-input flex-1 min-w-[2.5rem] max-w-[3rem] h-12 text-center text-2xl font-bold bg-white border-2 border-gray-200 rounded-lg focus:outline-none focus:border-black" placeholder="0">
+                            <input type="text" id="pin-input-8" maxlength="1" class="pin-input flex-1 min-w-[2.5rem] max-w-[3rem] h-12 text-center text-2xl font-bold bg-white border-2 border-gray-200 rounded-lg focus:outline-none focus:border-black" placeholder="0">
+                        </div>
+                    </div>
+                    <div class="flex gap-3">
+                        <button onclick="connectToPeer()" class="control-btn flex-1 px-6 py-3 bg-black text-white rounded-xl hover:opacity-90 transition-all text-sm font-semibold">
+                            <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
+                            連線
+                        </button>
+                        <button onclick="scanQRCode()" class="control-btn px-6 py-3 bg-gray-100 text-gray-900 rounded-xl hover:bg-gray-200 transition-all text-sm font-semibold">
+                            <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+                            </svg>
+                            掃描 QR
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Connection Info -->
+            <div class="bg-gray-50 rounded-2xl p-6 card-shadow">
+                <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">連線資訊</label>
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between p-4 bg-white rounded-lg shadow-sm">
+                        <span class="text-sm font-medium">連線狀態</span>
+                        <span id="conn-status-text" class="text-sm text-gray-500">未連線</span>
+                    </div>
+                    <div class="flex items-center justify-between p-4 bg-white rounded-lg shadow-sm">
+                        <span class="text-sm font-medium">對方 PIN</span>
+                        <span id="remote-peer-id" class="text-sm text-gray-500 font-mono">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: Video Display -->
+        <div id="video-container" class="w-full lg:w-2/3 flex flex-col gap-6 hidden">
+            <!-- Main Video Area -->
+            <div class="bg-gray-50 rounded-2xl p-6 flex-grow">
+                <div class="flex items-center justify-between mb-4">
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest">視訊畫面</label>
+                    <button onclick="toggleFullscreen()" id="fullscreen-btn" class="px-3 py-1.5 bg-black text-white rounded-lg text-xs font-semibold hover:opacity-80 transition-all flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+                        </svg>
+                        <span id="fullscreen-text">全螢幕</span>
+                    </button>
+                </div>
+                <div id="video-wrapper" class="bg-black rounded-xl overflow-hidden relative" style="min-height: 600px;">
+                    <video id="remote-video" autoplay playsinline class="w-full h-full"></video>
+                    <div id="no-video" class="w-full h-full min-h-[600px] flex flex-col items-center justify-center text-gray-500">
+                        <svg class="w-16 h-16 mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                        </svg>
+                        <p class="text-sm font-medium">等待視訊串流...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fullscreen Overlay -->
+            <div id="fullscreen-overlay" class="fullscreen-overlay">
+                <video id="fullscreen-video" autoplay playsinline></video>
+                <div class="fullscreen-controls">
+                    <button onclick="toggleFullscreen()" class="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-semibold transition-all flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                        關閉
+                    </button>
+                </div>
+            </div>
+
+            <!-- Local Preview (Share Mode) -->
+            <div id="local-preview" class="hidden bg-gray-50 rounded-2xl p-6">
+                <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">本地預覽</label>
+                <div class="bg-black rounded-xl overflow-hidden" style="height: 200px;">
+                    <video id="local-video" autoplay muted playsinline class="w-full h-full"></video>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- QR Code Modal -->
+    <div id="qr-modal" class="hidden fixed inset-0 bg-black/50 qr-modal flex items-center justify-center z-50 p-6" onclick="closeQRModal(event)">
+        <div class="bg-white rounded-2xl p-8 max-w-sm w-full" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-lg font-bold">掃描 QR Code 連線</h3>
+                <button onclick="closeQRModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-all">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="bg-white p-4 rounded-xl border-2 border-gray-100 mb-4 flex items-center justify-center">
+                <canvas id="connection-qrcode" class="max-w-full h-auto"></canvas>
+            </div>
+            <div class="text-center">
+                <p class="text-sm text-gray-600 mb-2">PIN 碼:</p>
+                <p class="text-3xl font-bold pin-display mb-3" id="qr-pin-display">--------</p>
+                <p class="text-xs text-gray-400">掃描後將自動開啟頁面並填入 PIN 碼</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- QR Scanner Modal -->
+    <div id="scanner-modal" class="hidden fixed inset-0 bg-black/50 qr-modal flex items-center justify-center z-50 p-6" onclick="closeScannerModal(event)">
+        <div class="bg-white rounded-2xl p-8 max-w-sm w-full" onclick="event.stopPropagation()">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-lg font-bold">上傳 QR Code</h3>
+                <button onclick="closeScannerModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-all">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center hover:border-black transition-all cursor-pointer mb-4" onclick="document.getElementById('qr-upload').click()">
+                <svg class="w-12 h-12 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+                <p class="text-sm font-medium text-gray-600">點擊選擇 QR Code 圖片</p>
+            </div>
+            <input type="file" id="qr-upload" accept="image/*" class="hidden" onchange="handleQRUpload(event)">
+            <p class="text-xs text-gray-500 text-center">支援 JPG, PNG 格式</p>
+        </div>
+    </div>
+
+    <script type="module">
+        import QRCode from 'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/+esm';
+        window.QRCodeLib = QRCode;
+    </script>
+
+    <script>
+        let peer = null;
+        let connection = null;
+        let currentMode = 'share';
+        let myPin = '';
+        let localStream = null;
+        let screenStream = null;
+        let cameraStream = null;
+        let micStream = null;
+        let combinedStream = null;
+        let availableDevices = {
+            cameras: [],
+            microphones: []
+        };
+
+        // Generate 8-digit PIN
+        function generatePin() {
+            return Math.floor(10000000 + Math.random() * 90000000).toString();
+        }
+
+        // Initialize PeerJS
+        function initPeer() {
+            myPin = generatePin();
+            peer = new Peer('pin-' + myPin);
+
+            peer.on('open', (id) => {
+                updatePinDisplay(myPin);
+                updateStatus('ready', '已就緒');
+            });
+
+            peer.on('connection', (conn) => {
+                connection = conn;
+                setupConnection(conn);
+                const remotePeer = conn.metadata?.pin || conn.peer.replace('pin-', '');
+                document.getElementById('remote-peer-id').textContent = remotePeer;
+            });
+
+            peer.on('call', (call) => {
+                // Answer the call
+                call.answer();
+                call.on('stream', (remoteStream) => {
+                    const remoteVideo = document.getElementById('remote-video');
+                    remoteVideo.srcObject = remoteStream;
+                    remoteVideo.classList.remove('hidden');
+                    document.getElementById('no-video').classList.add('hidden');
+                    
+                    // Show video container in view mode
+                    if (currentMode === 'view') {
+                        document.getElementById('video-container').classList.remove('hidden');
+                        // Auto fullscreen for viewer
+                        setTimeout(() => {
+                            toggleFullscreen();
+                        }, 500);
+                    }
+                });
+            });
+
+            peer.on('error', (err) => {
+                console.error('Peer error:', err);
+                alert('連線錯誤: ' + err.message);
+            });
+        }
+
+        // Update PIN display
+        function updatePinDisplay(pin) {
+            for (let i = 0; i < 8; i++) {
+                const digit = pin[i] || '-';
+                document.getElementById(`pin-digit-${i + 1}`).textContent = digit;
+                document.getElementById(`pin-digit-view-${i + 1}`).textContent = digit;
+            }
+        }
+
+        // Set mode
+        function setMode(mode) {
+            currentMode = mode;
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.classList.remove('bg-black', 'text-white', 'border-black');
+                btn.classList.add('bg-white', 'text-gray-900', 'border-gray-200');
+            });
+            const selectedBtn = document.getElementById(`mode-${mode}`);
+            selectedBtn.classList.add('bg-black', 'text-white', 'border-black');
+            selectedBtn.classList.remove('bg-white', 'text-gray-900', 'border-gray-200');
+
+            if (mode === 'share') {
+                document.getElementById('share-panel').classList.remove('hidden');
+                document.getElementById('view-panel').classList.add('hidden');
+                document.getElementById('local-preview').classList.remove('hidden');
+                document.getElementById('video-container').classList.remove('hidden');
+                enumerateDevices();
+            } else {
+                document.getElementById('share-panel').classList.add('hidden');
+                document.getElementById('view-panel').classList.remove('hidden');
+                document.getElementById('local-preview').classList.add('hidden');
+                document.getElementById('video-container').classList.add('hidden');
+                stopAllStreams();
+            }
+        }
+
+        // Enumerate devices
+        async function enumerateDevices() {
+            try {
+                // Request temporary permission to get device labels
+                let tempStream = null;
+                try {
+                    tempStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+                } catch (err) {
+                    // If both fail, try audio only
+                    try {
+                        tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    } catch (err2) {
+                        // If audio fails, try video only
+                        try {
+                            tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                        } catch (err3) {
+                            console.log('No permission for media devices');
+                        }
+                    }
+                }
+
+                // Get devices after permission granted
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                
+                // Stop temporary stream
+                if (tempStream) {
+                    tempStream.getTracks().forEach(track => track.stop());
+                }
+
+                availableDevices.cameras = devices.filter(d => d.kind === 'videoinput');
+                availableDevices.microphones = devices.filter(d => d.kind === 'audioinput');
+
+                // Populate camera select
+                const cameraSelect = document.getElementById('camera-select');
+                cameraSelect.innerHTML = '<option value="">選擇鏡頭裝置...</option>';
+                availableDevices.cameras.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.textContent = device.label || `鏡頭 ${index + 1}`;
+                    cameraSelect.appendChild(option);
+                });
+
+                // Populate microphone select
+                const micSelect = document.getElementById('mic-select');
+                micSelect.innerHTML = '<option value="">選擇麥克風裝置...</option>';
+                availableDevices.microphones.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.textContent = device.label || `麥克風 ${index + 1}`;
+                    micSelect.appendChild(option);
+                });
+            } catch (err) {
+                console.error('Error enumerating devices:', err);
+            }
+        }
+
+        // Toggle Screen
+        async function toggleScreen() {
+            const toggle = document.getElementById('screen-toggle');
+            if (toggle.checked) {
+                try {
+                    screenStream = await navigator.mediaDevices.getDisplayMedia({
+                        video: { mediaSource: 'screen' },
+                        audio: true  // 分享系統聲音
+                    });
+
+                    screenStream.getVideoTracks()[0].onended = () => {
+                        toggle.checked = false;
+                        toggleScreen();
+                    };
+
+                    updateCombinedStream();
+                } catch (err) {
+                    console.error('Error sharing screen:', err);
+                    toggle.checked = false;
+                    alert('無法分享螢幕: ' + err.message);
+                }
+            } else {
+                if (screenStream) {
+                    screenStream.getTracks().forEach(track => track.stop());
+                    screenStream = null;
+                    updateCombinedStream();
+                }
+            }
+        }
+
+        // Toggle Camera
+        async function toggleCamera() {
+            const toggle = document.getElementById('camera-toggle');
+            if (toggle.checked) {
+                await startCamera();
+            } else {
+                if (cameraStream) {
+                    cameraStream.getTracks().forEach(track => track.stop());
+                    cameraStream = null;
+                    updateCombinedStream();
+                }
+            }
+        }
+
+        // Start Camera
+        async function startCamera() {
+            const cameraSelect = document.getElementById('camera-select');
+            const deviceId = cameraSelect.value;
+
+            try {
+                const constraints = {
+                    video: deviceId ? { deviceId: { exact: deviceId } } : true,
+                    audio: false
+                };
+
+                if (cameraStream) {
+                    cameraStream.getTracks().forEach(track => track.stop());
+                }
+
+                cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+                updateCombinedStream();
+            } catch (err) {
+                console.error('Error accessing camera:', err);
+                document.getElementById('camera-toggle').checked = false;
+                alert('無法存取鏡頭: ' + err.message);
+            }
+        }
+
+        // Toggle Microphone
+        async function toggleMicrophone() {
+            const toggle = document.getElementById('mic-toggle');
+            if (toggle.checked) {
+                await startMicrophone();
+            } else {
+                if (micStream) {
+                    micStream.getTracks().forEach(track => track.stop());
+                    micStream = null;
+                    updateCombinedStream();
+                }
+            }
+        }
+
+        // Start Microphone
+        async function startMicrophone() {
+            const micSelect = document.getElementById('mic-select');
+            const deviceId = micSelect.value;
+
+            try {
+                const constraints = {
+                    audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+                    video: false
+                };
+
+                if (micStream) {
+                    micStream.getTracks().forEach(track => track.stop());
+                }
+
+                micStream = await navigator.mediaDevices.getUserMedia(constraints);
+                updateCombinedStream();
+            } catch (err) {
+                console.error('Error accessing microphone:', err);
+                document.getElementById('mic-toggle').checked = false;
+                alert('無法存取麥克風: ' + err.message);
+            }
+        }
+
+        // Update Combined Stream
+        function updateCombinedStream() {
+            const tracks = [];
+
+            // Add screen video track (priority)
+            if (screenStream) {
+                tracks.push(...screenStream.getVideoTracks());
+                // Add screen audio track (system audio)
+                tracks.push(...screenStream.getAudioTracks());
+            }
+            // Add camera video track if no screen
+            else if (cameraStream) {
+                tracks.push(...cameraStream.getVideoTracks());
+            }
+
+            // Add microphone audio track
+            if (micStream) {
+                tracks.push(...micStream.getAudioTracks());
+            }
+
+            // Create new stream
+            if (tracks.length > 0) {
+                combinedStream = new MediaStream(tracks);
+                
+                // Update local preview
+                const localVideo = document.getElementById('local-video');
+                localVideo.srcObject = combinedStream;
+
+                // If connected, update the call
+                if (connection && connection.open) {
+                    makeCall();
+                }
+            } else {
+                combinedStream = null;
+                const localVideo = document.getElementById('local-video');
+                localVideo.srcObject = null;
+            }
+        }
+
+        // Make Call
+        function makeCall() {
+            if (!connection || !connection.open || !combinedStream) return;
+
+            const remotePeerId = connection.peer;
+            const call = peer.call(remotePeerId, combinedStream);
+            
+            call.on('stream', (remoteStream) => {
+                // Handle if remote also shares
+            });
+        }
+
+        // Setup PIN inputs
+        function setupPinInputs() {
+            const inputs = [];
+            for (let i = 1; i <= 8; i++) {
+                inputs.push(`pin-input-${i}`);
+            }
+
+            inputs.forEach((id, index) => {
+                const input = document.getElementById(id);
+                if (!input) return;
+
+                input.addEventListener('input', (e) => {
+                    const value = e.target.value;
+                    if (value.length === 1 && /\d/.test(value)) {
+                        if (index < inputs.length - 1) {
+                            document.getElementById(inputs[index + 1]).focus();
+                        }
+                    }
+                });
+
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Backspace' && !e.target.value && index > 0) {
+                        document.getElementById(inputs[index - 1]).focus();
+                    } else if (e.key === 'Enter' && index === inputs.length - 1) {
+                        connectToPeer();
+                    }
+                });
+
+                input.addEventListener('paste', (e) => {
+                    e.preventDefault();
+                    const paste = e.clipboardData.getData('text').trim();
+                    if (/^\d{8}$/.test(paste)) {
+                        inputs.forEach((inputId, i) => {
+                            document.getElementById(inputId).value = paste[i];
+                        });
+                        document.getElementById(inputs[inputs.length - 1]).focus();
+                    }
+                });
+            });
+        }
+
+        // Connect to peer
+        function connectToPeer() {
+            let inputPin = '';
+            for (let i = 1; i <= 8; i++) {
+                inputPin += document.getElementById(`pin-input-${i}`).value;
+            }
+
+            if (!inputPin || inputPin.length !== 8) {
+                alert('請輸入完整的 8 位數 PIN 碼');
+                return;
+            }
+
+            if (!/^\d{8}$/.test(inputPin)) {
+                alert('請輸入正確的 8 位數 PIN 碼');
+                return;
+            }
+
+            const customPeerId = 'pin-' + inputPin;
+            connection = peer.connect(customPeerId, {
+                metadata: { pin: myPin }
+            });
+            setupConnection(connection);
+        }
+
+        // Setup connection handlers
+        function setupConnection(conn) {
+            conn.on('open', () => {
+                updateStatus('connected', '已連線');
+                const remotePeer = conn.metadata?.pin || conn.peer.replace('pin-', '');
+                document.getElementById('remote-peer-id').textContent = remotePeer;
+
+                // If share mode, show media controls
+                if (currentMode === 'share') {
+                    document.getElementById('media-controls').classList.remove('hidden');
+                    document.getElementById('waiting-connection').classList.add('hidden');
+                    document.getElementById('video-container').classList.remove('hidden');
+                    
+                    // If has stream, make call
+                    if (combinedStream) {
+                        makeCall();
+                    }
+                }
+            });
+
+            conn.on('data', (data) => {
+                // Handle data messages if needed
+            });
+
+            conn.on('close', () => {
+                updateStatus('disconnected', '已斷線');
+                document.getElementById('remote-peer-id').textContent = '-';
+                
+                // Reset UI
+                if (currentMode === 'share') {
+                    document.getElementById('media-controls').classList.add('hidden');
+                    document.getElementById('waiting-connection').classList.remove('hidden');
+                } else if (currentMode === 'view') {
+                    document.getElementById('video-container').classList.add('hidden');
+                }
+            });
+        }
+
+        // Stop all streams
+        function stopAllStreams() {
+            [screenStream, cameraStream, micStream].forEach(stream => {
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                }
+            });
+            screenStream = null;
+            cameraStream = null;
+            micStream = null;
+            combinedStream = null;
+
+            document.getElementById('screen-toggle').checked = false;
+            document.getElementById('camera-toggle').checked = false;
+            document.getElementById('mic-toggle').checked = false;
+        }
+
+        // Update status
+        function updateStatus(status, text) {
+            const indicator = document.getElementById('status-indicator');
+            const statusText = document.getElementById('conn-status-text');
+
+            const colors = {
+                ready: 'bg-yellow-400',
+                connected: 'bg-green-500',
+                disconnected: 'bg-gray-300'
+            };
+
+            indicator.querySelector('.w-2').className = `w-2 h-2 rounded-full ${colors[status] || 'bg-gray-300'}`;
+            indicator.querySelector('span:last-child').textContent = text;
+            statusText.textContent = text;
+        }
+
+        // QR Code functions
+        function showQRCode() {
+            const modal = document.getElementById('qr-modal');
+            const canvas = document.getElementById('connection-qrcode');
+            const pinDisplay = document.getElementById('qr-pin-display');
+
+            pinDisplay.textContent = myPin;
+            modal.classList.remove('hidden');
+
+            const currentUrl = window.location.href.split('?')[0];
+            const qrUrl = `${currentUrl}?pin=${myPin}`;
+
+            window.QRCodeLib.toCanvas(canvas, qrUrl, {
+                width: 256,
+                margin: 2,
+                color: { dark: '#000000', light: '#ffffff' }
+            });
+        }
+
+        function showQRCodeView() {
+            showQRCode();
+        }
+
+        function closeQRModal(event) {
+            if (event && event.target !== event.currentTarget) return;
+            document.getElementById('qr-modal').classList.add('hidden');
+        }
+
+        function scanQRCode() {
+            document.getElementById('scanner-modal').classList.remove('hidden');
+        }
+
+        function closeScannerModal(event) {
+            if (event && event.target !== event.currentTarget) return;
+            document.getElementById('scanner-modal').classList.add('hidden');
+        }
+
+        function handleQRUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                alert('請手動輸入 QR Code 中的 PIN 碼');
+                closeScannerModal();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Copy functions
+        function copyMyId() {
+            navigator.clipboard.writeText(myPin).then(() => {
+                alert('已複製 PIN 碼: ' + myPin);
+            });
+        }
+
+        function copyMyIdView() {
+            navigator.clipboard.writeText(myPin).then(() => {
+                alert('已複製 PIN 碼: ' + myPin);
+            });
+        }
+
+        // Toggle Fullscreen
+        function toggleFullscreen() {
+            const overlay = document.getElementById('fullscreen-overlay');
+            const remoteVideo = document.getElementById('remote-video');
+            const fullscreenVideo = document.getElementById('fullscreen-video');
+            const fullscreenBtn = document.getElementById('fullscreen-btn');
+            const fullscreenText = document.getElementById('fullscreen-text');
+            
+            if (!overlay.classList.contains('active')) {
+                // 進入假全螢幕
+                fullscreenVideo.srcObject = remoteVideo.srcObject;
+                overlay.classList.add('active');
+                fullscreenText.textContent = '關閉';
+            } else {
+                // 離開假全螢幕
+                overlay.classList.remove('active');
+                fullscreenVideo.srcObject = null;
+                fullscreenText.textContent = '全螢幕';
+            }
+        }
+
+        // Device change handlers
+        document.getElementById('camera-select').addEventListener('change', () => {
+            if (document.getElementById('camera-toggle').checked) {
+                startCamera();
+            }
+        });
+
+        document.getElementById('mic-select').addEventListener('change', () => {
+            if (document.getElementById('mic-toggle').checked) {
+                startMicrophone();
+            }
+        });
+
+        // ESC key to exit fullscreen
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                const overlay = document.getElementById('fullscreen-overlay');
+                if (overlay.classList.contains('active')) {
+                    toggleFullscreen();
+                }
+            }
+        });
+
+        // Initialize
+        initPeer();
+        setupPinInputs();
+        
+        // Initialize UI - show video container in share mode by default
+        if (currentMode === 'share') {
+            document.getElementById('video-container').classList.remove('hidden');
+        }
+
+        // Check for PIN in URL parameters
+        window.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const pinFromUrl = urlParams.get('pin');
+
+            if (pinFromUrl && /^\d{8}$/.test(pinFromUrl)) {
+                // Switch to view mode
+                setMode('view');
+
+                // Auto-fill PIN inputs
+                for (let i = 1; i <= 8; i++) {
+                    document.getElementById(`pin-input-${i}`).value = pinFromUrl[i - 1];
+                }
+
+                // Show notification
+                setTimeout(() => {
+                    if (confirm(`檢測到 PIN 碼: ${pinFromUrl}\n是否立即連線？`)) {
+                        connectToPeer();
+                    }
+                }, 500);
+            }
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            stopAllStreams();
+            if (connection) connection.close();
+            if (peer) peer.destroy();
+        });
+    </script>
+</body>
+</html>
