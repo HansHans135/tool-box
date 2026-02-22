@@ -137,7 +137,15 @@
 
                 <!-- Selected Files -->
                 <div id="selected-files" class="hidden space-y-3">
-                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest">已選擇的檔案</label>
+                    <div class="flex items-center justify-between mb-4">
+                        <label class="block text-xs font-bold text-gray-400 uppercase tracking-widest">已選擇的檔案</label>
+                        <button onclick="sendAllFiles()" id="send-all-btn" class="px-4 py-2 bg-black text-white rounded-lg hover:opacity-80 transition-all text-sm font-semibold flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                            </svg>
+                            全部傳送
+                        </button>
+                    </div>
                     <div id="file-list" class="space-y-2"></div>
                 </div>
             </div>
@@ -289,6 +297,7 @@
         let selectedFiles = [];
         let receivedChunks = {};
         let myPin = '';
+        let isSending = false;
 
         // Generate 4-digit PIN
         function generatePin() {
@@ -486,42 +495,130 @@
                 return;
             }
 
-            const file = selectedFiles[index];
-            const chunkSize = 16384;
-            const totalChunks = Math.ceil(file.size / chunkSize);
-
-            connection.send({
-                type: 'file-start',
-                name: file.name,
-                size: file.size,
-                totalChunks: totalChunks
-            });
-
-            showTransferProgress(file.name, totalChunks);
-
-            for (let i = 0; i < totalChunks; i++) {
-                const start = i * chunkSize;
-                const end = Math.min(start + chunkSize, file.size);
-                const chunk = file.slice(start, end);
-
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    connection.send({
-                        type: 'file-chunk',
-                        name: file.name,
-                        chunk: i,
-                        data: e.target.result
-                    });
-                    updateTransferProgress(file.name, i + 1, totalChunks);
-                };
-                reader.readAsArrayBuffer(chunk);
-                await new Promise(resolve => setTimeout(resolve, 10));
+            if (isSending) {
+                alert('正在傳送中，請稍候');
+                return;
             }
 
-            connection.send({
-                type: 'file-end',
-                name: file.name
-            });
+            isSending = true;
+            updateSendButton(index, true);
+
+            try {
+                const file = selectedFiles[index];
+                const chunkSize = 16384;
+                const totalChunks = Math.ceil(file.size / chunkSize);
+
+                connection.send({
+                    type: 'file-start',
+                    name: file.name,
+                    size: file.size,
+                    totalChunks: totalChunks
+                });
+
+                showTransferProgress(file.name, totalChunks);
+
+                for (let i = 0; i < totalChunks; i++) {
+                    const start = i * chunkSize;
+                    const end = Math.min(start + chunkSize, file.size);
+                    const chunk = file.slice(start, end);
+
+                    await new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            connection.send({
+                                type: 'file-chunk',
+                                name: file.name,
+                                chunk: i,
+                                data: e.target.result
+                            });
+                            updateTransferProgress(file.name, i + 1, totalChunks);
+                            resolve();
+                        };
+                        reader.readAsArrayBuffer(chunk);
+                    });
+                    await new Promise(resolve => setTimeout(resolve, 10));
+                }
+
+                connection.send({
+                    type: 'file-end',
+                    name: file.name
+                });
+
+                updateSendButton(index, false, true);
+            } catch (error) {
+                console.error('傳送失敗:', error);
+                alert('傳送失敗: ' + error.message);
+                updateSendButton(index, false, false);
+            } finally {
+                isSending = false;
+            }
+        }
+
+        // Send all files
+        async function sendAllFiles() {
+            if (!connection || !connection.open) {
+                alert('請先連線到對方');
+                return;
+            }
+
+            if (isSending) {
+                alert('正在傳送中，請稍候');
+                return;
+            }
+
+            if (selectedFiles.length === 0) {
+                alert('請先選擇檔案');
+                return;
+            }
+
+            const sendAllBtn = document.getElementById('send-all-btn');
+            if (sendAllBtn) {
+                sendAllBtn.disabled = true;
+                sendAllBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+
+            for (let i = 0; i < selectedFiles.length; i++) {
+                try {
+                    await sendFile(i);
+                    // 等待一小段時間再傳送下一個檔案
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                } catch (error) {
+                    console.error(`傳送第 ${i + 1} 個檔案失敗:`, error);
+                    if (!confirm(`傳送「${selectedFiles[i].name}」失敗，是否繼續傳送剩餘檔案？`)) {
+                        break;
+                    }
+                }
+            }
+
+            if (sendAllBtn) {
+                sendAllBtn.disabled = false;
+                sendAllBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }
+
+        // Update send button state
+        function updateSendButton(index, sending, completed = false) {
+            const fileList = document.getElementById('file-list');
+            const fileItems = fileList.querySelectorAll('.file-item');
+            if (fileItems[index]) {
+                const button = fileItems[index].querySelector('button');
+                if (button) {
+                    if (sending) {
+                        button.textContent = '傳送中...';
+                        button.disabled = true;
+                        button.classList.add('opacity-50', 'cursor-not-allowed');
+                    } else if (completed) {
+                        button.textContent = '已完成';
+                        button.classList.remove('bg-black', 'opacity-50', 'cursor-not-allowed');
+                        button.classList.add('bg-green-500');
+                        button.disabled = true;
+                    } else {
+                        button.textContent = '傳送';
+                        button.disabled = false;
+                        button.classList.remove('opacity-50', 'cursor-not-allowed');
+                    }
+                }
+            }
         }
 
         // Handle received data
